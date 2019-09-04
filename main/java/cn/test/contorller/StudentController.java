@@ -2,6 +2,7 @@ package cn.test.contorller;
 
 import cn.test.domain.Student;
 import cn.test.service.StudentService;
+import cn.test.utils.MyMail;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -20,6 +21,7 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.*;
 import java.net.URLEncoder;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 
 /**
@@ -35,6 +37,9 @@ public class StudentController {
     private static final String rootpath = "F:\\userspace\\";
     //MD5 加盐
     private static final String key = "super";
+    private static final String activecode = "acode";
+
+    private static HashMap<String,Boolean> activeCode = new HashMap<String, Boolean>();
 
     //spring框架自动注入相应的服务类
     @Autowired
@@ -59,18 +64,30 @@ public class StudentController {
         //检查是否注册
         if(null==s) {
 
+            String address = student.getEmail();
             String password = student.getPassword();
+            //生成邮箱激活码
+            String code = DigestUtils.md5Hex(address+activecode);
+            StudentController.activeCode.put(code,false);
+            MyMail.sendMail(address,code);
+
             /*
              * 生成md5，防止明文存储
              */
+
             password = DigestUtils.md5Hex(password);
             password = DigestUtils.md5Hex(password+key);
+            /**
+             * 生成邮箱激活文件
+             */
+
 
             /**
              * 分配生成初始页面的数据
              */
             String path = "{\"name\":\"开始\",\"files\":[],\"dirs\":[]}";
-            String name = student.getEmail().split("@")[0];
+            String name = address.split("@")[0];
+
             System.out.println("收到注册请求");
 
             student.setName(name);
@@ -81,14 +98,7 @@ public class StudentController {
              * 将注册好的用户信息存储至数据库
              */
             studentService.insertOne(student);
-            //取出数据库分配的id
-            Student ss =studentService.selectOne(student);
-            //根据id生成用户空间的文件路径
-            String filepath = rootpath+ss.getStudent_Id();
-            File userdir = new File(filepath);
-            if(!userdir.exists()){
-                userdir.mkdir();
-            }
+
             //返回登陆页面
             return "redirect:/";
         }else {
@@ -99,6 +109,18 @@ public class StudentController {
 
     }
 
+    @RequestMapping("/active.do")
+    @ResponseBody
+    public String activeAct(String code){
+
+        System.out.println("激活成功");
+        if(StudentController.activeCode.containsKey(code)){
+            activeCode.put(code,true);
+            System.out.println("code:"+code);
+        }
+
+        return "successful";
+    }
     //登陆模块
 
     /**
@@ -115,12 +137,24 @@ public class StudentController {
         s.setPassword(password);
         Student student=studentService.selectOne(s);
         //是否为空
-        if(null!=student) {
-            //追加返回的页面数据
-            model.addAttribute("now",student);
-            System.out.println(student.toString());
-            //跳转至用户空间页面
-            return "gg";
+
+
+        if(null!=student&&
+                StudentController.activeCode.get(DigestUtils.md5Hex(student.getEmail()+activecode))) {
+
+
+                //根据id生成用户空间的文件路径
+                String filepath = rootpath + student.getStudent_Id();
+                File userdir = new File(filepath);
+                if (!userdir.exists()) {
+                    userdir.mkdir();
+                }
+                //追加返回的页面数据
+                model.addAttribute("now", student);
+                System.out.println(student.toString());
+                //跳转至用户空间页面
+                return "gg";
+
         }
         else{
             //返回错误信息
@@ -148,6 +182,7 @@ public class StudentController {
         s.setFilepathData(filepathData);
         //更新用户空间的页面数据
         studentService.updateOne(s);
+
         return "";
     }
 
